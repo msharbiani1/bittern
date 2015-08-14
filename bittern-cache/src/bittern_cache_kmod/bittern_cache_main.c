@@ -107,6 +107,7 @@ void __bio_copy_from_cache(struct work_item *wi,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 
+	bc = bc; /* quiet compiler about unused variable (used in dev build) */
 	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*
@@ -172,7 +173,7 @@ void __bio_copy_from_cache(struct work_item *wi,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "done-copy-from-cache");
 
-	ASSERT(biovec_offset == bio->bi_iter.bi_size);
+	M_ASSERT(biovec_offset == bio->bi_iter.bi_size);
 	if (bio->bi_iter.bi_size == PAGE_SIZE) {
 		ASSERT(biovec_offset == PAGE_SIZE);
 		ASSERT(cache_block_copy_offset == 0);
@@ -211,6 +212,7 @@ void bio_copy_to_cache(struct work_item *wi,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 
+	bc = bc; /* quiet compiler about unused variable (used in dev build) */
 	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*
@@ -1694,6 +1696,10 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_pending_read_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
 	} else {
+#if 0
+		/*
+		 * Turn off issuing of REQ_FUA until hang problem is fixed.
+		 */
 		/*
 		 * Always set REQ_FUA unless disabled.
 		 *
@@ -1706,6 +1712,7 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 			 bc->bc_enable_req_fua == true);
 		if (bc->bc_enable_req_fua)
 			cloned_bio->bi_rw |= REQ_FUA;
+#endif
 		atomic_inc(&bc->bc_seq_write.bypass_count);
 		atomic_inc(&bc->bc_pending_write_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);
@@ -2250,6 +2257,12 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 	ASSERT_BITTERN_CACHE(bc);
 
 	ASSERT((bio->bi_rw & REQ_WRITE_SAME) == 0);
+
+	if (bc->error_state != ES_NOERROR) {
+		/* error state, bailout with error */
+		bio_endio(bio, -EIO);
+		return DM_MAPIO_SUBMITTED;
+	}
 
 	/* do this here (not workfunc) so to increment these counters once */
 	if (bio_is_discard_request(bio)) {

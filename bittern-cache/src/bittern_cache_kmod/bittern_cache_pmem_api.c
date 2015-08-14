@@ -1044,6 +1044,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 	struct pmem_api *pa = &bc->bc_papi;
 	struct pmem_block_metadata *pmbm;
 
+	pa = pa; /* shutoff compiler warning (used in dev build) */
 	ASSERT(bc != NULL);
 	ASSERT(sizeof(struct pmem_header) == PAGE_SIZE);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
@@ -1178,9 +1179,18 @@ static void pmem_header_update_worker(struct work_struct *work)
 	ASSERT_BITTERN_CACHE(bc);
 	M_ASSERT(bc->bc_pmem_update_workqueue != NULL);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
-	ret = pmem_header_update(bc, 0);
-	M_ASSERT_FIXME(ret == 0);
+	if (bc->error_state == ES_NOERROR) {
+		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
+		ret = pmem_header_update(bc, 0);
+
+		/* should make this a common function */
+		if (ret != 0) {
+			printk_err("%s: cannot update header: %d. will fail all future requests\n",
+				   bc->bc_name,
+				   ret);
+			bc->error_state = ES_ERROR_FAIL_ALL;
+		}
+	}
 
 	schedule_delayed_work(&bc->bc_pmem_update_work,
 			      msecs_to_jiffies(30000));
@@ -1345,6 +1355,7 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 	struct pmem_api *pa = &bc->bc_papi;
 	int block_id = cache_block->bcb_block_id;
 
+	pa = pa; /* shutoff compiler warning (used in dev build) */
 	ASSERT(out_pmbm_mem != NULL);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "out_pmbm_mem=%p", out_pmbm_mem);
